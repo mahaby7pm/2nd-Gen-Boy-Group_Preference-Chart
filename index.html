@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>2세대 남돌 공동 취향표</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <main>
+        <header>
+            <div class="title-area">
+                <h1>남돌 취향표</h1>
+                <p class="subtitle">@maxmajukee</p>
+            </div>
+
+            <div class="actions">
+                <button id="add-person">+ 참여자 추가</button>
+                <button id="save-image" class="secondary">PNG 저장</button>
+            </div>
+        </header>
+       
+        <section class="table-wrap">
+            <table id="chart"></table>
+        </section>
+    </main>
+
+    <!-- 참여자 등록과 수정에 공통으로 사용하는 창 -->
+    <dialog id="profile-dialog">
+        <form id="profile-form" class="dialog-body">
+            <h2 id="profile-title">참여자 등록</h2>
+            <label>
+                이름
+                <input id="person-name" maxlength="20" required placeholder="이름 또는 닉네임">
+            </label>
+            <label>
+                프로필 사진 (수정할 때 선택하지 않으면 기존 사진 유지)
+                <input id="person-photo" type="file" accept="image/*">
+            </label>
+            <label id="remove-photo-label">
+                <input type="checkbox" id="remove-photo">
+                기존 프로필 사진 삭제
+            </label>
+            <div class="dialog-actions">
+                <button type="button" class="secondary" data-close>취소</button>
+                <button type="submit" id="profile-submit">등록하기</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- 최애 멤버 선택창 -->
+    <dialog id="member-dialog">
+        <div class="dialog-body">
+            <h2 id="member-title">최애 선택</h2>
+            <div id="member-options" class="member-options"></div>
+            <div class="dialog-actions">
+                <button type="button" class="secondary" data-close>닫기</button>
+            </div>
+        </div>
+    </dialog>
+    <script src="script.js"></script>
+</body>
+
+</html>
