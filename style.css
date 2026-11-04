@@ -892,3 +892,10 @@ header {
     accent-color: #555;
     transform: translateY(2px);
 }
+
+/* 모바일에서만 체크박스 높이 조정 */
+@media (max-width: 600px) {
+    #remove-photo-label input[type="checkbox"] {
+        transform: translateY(0px);
+    }
+}
