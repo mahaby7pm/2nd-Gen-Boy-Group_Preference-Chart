@@ -858,3 +858,37 @@ header {
 #member-dialog .member-choice {
     box-sizing: border-box;
 }
+
+/* 프로필 사진 삭제 옵션 */
+#remove-photo-label {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    width: fit-content;
+    margin: 0;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+#remove-photo-label span {
+    font-size: inherit;
+    font-weight: 400;
+}
+
+#remove-photo-label input[type="checkbox"] {
+    appearance: auto;
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    min-width: 14px;
+    margin: 0;
+    padding: 0;
+    flex: none;
+    accent-color: #555;
+    transform: translateY(2px);
+}
