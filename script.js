@@ -160,6 +160,15 @@ const memberImages = {
     'ukiss:AJ': 'images/ukiss/aj.jpg',
 };
 
+// Supabase 연결 설정
+const SUPABASE_URL = 'https://bbedcibhonqibaexkgmr.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_GeXQs-w-HiPqTBRleIhvqw_Q5kYiROI';
+
+const supabaseClient = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+);
+
 const STORAGE_KEY = 'idol-chart-v1'; // 기존 브라우저 저장 데이터 유지
 const $ = id => document.getElementById(id);
 let people = [];
@@ -333,17 +342,43 @@ function openMembers(personId, groupId) {
             button.append(label);
         }
 
-        button.addEventListener('click', () => {
-            person.picks ??= {};
-            const previous = person.picks[groupId];
-            person.picks[groupId] = member;
-            if (!save()) {
-                if (previous === undefined) delete person.picks[groupId];
-                else person.picks[groupId] = previous;
+        button.addEventListener('click', async () => {
+            // 저장 중 중복 클릭 방지
+            options.querySelectorAll('button').forEach(b => b.disabled = true);
+
+            // 다른 사람의 최신 선택 기록을 먼저 가져오기
+            const { data: latest, error: readError } = await supabaseClient
+                .from('chart_participants')
+                .select('picks')
+                .eq('id', personId)
+                .single();
+
+            if (readError) {
+                console.error('선택 기록 불러오기 실패:', readError);
+                alert('선택 기록을 불러오지 못했어요.');
+                options.querySelectorAll('button').forEach(b => b.disabled = false);
                 return;
             }
-            render();
+
+            const updatedPicks = {
+                ...(latest.picks || {}),
+                [groupId]: member
+            };
+
+            const { error } = await supabaseClient
+                .from('chart_participants')
+                .update({ picks: updatedPicks })
+                .eq('id', personId);
+
+            if (error) {
+                console.error('최애 선택 저장 실패:', error);
+                alert('최애 선택을 저장하지 못했어요.');
+                options.querySelectorAll('button').forEach(b => b.disabled = false);
+                return;
+            }
+
             closeDialog($('member-dialog'));
+            await loadParticipants();
         });
         options.append(button);
     });
@@ -375,95 +410,133 @@ function openEditProfile(personId) {
     openDialog($('profile-dialog'));
 }
 
+
 $('profile-form').addEventListener('submit', async event => {
     event.preventDefault();
+
     const name = $('person-name').value.trim();
     if (!name) return;
 
-    const file = $('person-photo').files[0];
-    let photo = '';
-    if (file) {
-        if (file.size > 1_000_000) {
-            alert('1MB 이하의 사진을 사용해 주세요.');
-            return;
+    const submitButton = $('profile-submit');
+    submitButton.disabled = true;
+
+    try {
+        const file = $('person-photo').files[0];
+        let photo = '';
+
+        // 프로필 사진 업로드
+        if (file) {
+            if (file.size > 1_000_000) {
+                alert('1MB 이하의 사진을 사용해 주세요.');
+                return;
+            }
+
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+            if (!allowedTypes.includes(file.type)) {
+                alert('JPG, PNG, WebP 사진만 사용할 수 있어요.');
+                return;
+            }
+
+            const extension = file.type === 'image/png'
+                ? 'png'
+                : file.type === 'image/webp' ? 'webp' : 'jpg';
+
+            const fileName = `${makeId()}.${extension}`;
+
+            const { error: uploadError } = await supabaseClient.storage
+                .from('profile-photos')
+                .upload(fileName, file, {
+                    contentType: file.type
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: urlData } = supabaseClient.storage
+                .from('profile-photos')
+                .getPublicUrl(fileName);
+
+            photo = urlData.publicUrl;
         }
-        try {
-            photo = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-            });
-        } catch (error) {
-            alert('사진을 읽지 못했어요. 다른 사진으로 시도해 주세요.');
-            return;
+
+        if (editingPersonId) {
+            // 기존 참여자 수정
+            const person = people.find(p => p.id === editingPersonId);
+            if (!person) {
+                alert('수정할 참여자를 찾을 수 없어요.');
+                return;
+            }
+
+            let updatedPhoto = person.photo || '';
+
+            if ($('remove-photo').checked) {
+                updatedPhoto = '';
+            } else if (file) {
+                updatedPhoto = photo;
+            }
+
+            const { error } = await supabaseClient
+                .from('chart_participants')
+                .update({
+                    nickname: name,
+                    photo: updatedPhoto
+                })
+                .eq('id', editingPersonId);
+
+            if (error) throw error;
+
+        } else {
+            // 신규 참여자 등록
+            const newPerson = {
+                id: makeId(),
+                nickname: name,
+                photo: photo,
+                picks: {}
+            };
+
+            const { error } = await supabaseClient
+                .from('chart_participants')
+                .insert(newPerson);
+
+            if (error) throw error;
         }
+
+        closeDialog($('profile-dialog'));
+        event.target.reset();
+        editingPersonId = null;
+
+        // 저장 후 공동 참여자 목록 다시 불러오기
+        await loadParticipants();
+
+    } catch (error) {
+        console.error('참여자 저장 실패:', error);
+        alert('참여자 저장에 실패했어요. 다시 시도해 주세요.');
+    } finally {
+        submitButton.disabled = false;
     }
-
-    if (editingPersonId) {
-        const person = people.find(p => p.id === editingPersonId);
-        if (!person) return;
-
-        // 수정 전 정보 백업
-        const oldName = person.name;
-        const oldPhoto = person.photo;
-
-        // 이름 수정
-        person.name = name;
-
-        // 기존 사진 삭제가 선택된 경우
-        if ($('remove-photo').checked) {
-            person.photo = '';
-        }
-        // 새 사진을 업로드한 경우
-        else if (file) {
-            person.photo = photo;
-        }
-
-        // 저장 실패 시 기존 정보 복구
-        if (!save()) {
-            person.name = oldName;
-            person.photo = oldPhoto;
-            return;
-        }
-
-    } else {
-        // 신규 참여자 등록
-        const newPerson = {
-            id: makeId(),
-            name: name,
-            photo: photo,
-            picks: {}
-        };
-
-        people.push(newPerson);
-
-        // 저장 실패 시 추가한 참여자 제거
-        if (!save()) {
-            people.pop();
-            return;
-        }
-    }
-
-    render();
-    closeDialog($('profile-dialog'));
-    event.target.reset();
-    editingPersonId = null;
 });
 
+
 // 6. 참여자 삭제 (선택 기록도 함께 삭제)
-function deletePerson(personId) {
+async function deletePerson(personId) {
     const person = people.find(p => p.id === personId);
     if (!person) return;
-    if (!confirm(`${person.name} 님을 삭제할까요?\n최애 선택 기록도 함께 삭제됩니다.`)) return;
 
-    const previousPeople = people;
-    people = people.filter(p => p.id !== personId);
-    if (!save()) {
-        people = previousPeople;
+    if (!confirm(`${person.name} 님을 삭제할까요?\n최애 선택 기록도 함께 삭제됩니다.`)) {
         return;
     }
-    render();
+
+    const { error } = await supabaseClient
+        .from('chart_participants')
+        .delete()
+        .eq('id', personId);
+
+    if (error) {
+        console.error('참여자 삭제 실패:', error);
+        alert('참여자를 삭제하지 못했어요.');
+        return;
+    }
+
+    await loadParticipants();
 }
 
 // 7. 팝업 열고 닫기
@@ -513,8 +586,16 @@ function loadImage(src) {
         if (!src) return resolve(null);
 
         const img = new Image();
+
+        // 외부 이미지도 Canvas에서 안전하게 사용할 수 있도록 설정
+        img.crossOrigin = 'anonymous';
+
         img.onload = () => resolve(img);
-        img.onerror = () => resolve(null);
+        img.onerror = () => {
+            console.warn('이미지 불러오기 실패:', src);
+            resolve(null);
+        };
+
         img.src = src;
     });
 }
@@ -605,7 +686,7 @@ async function exportPng() {
         c.restore();
     }
 
-    drawText('남돌 취향표', width / 2, 48, 36, '#111111', 'bold');
+    drawText('2세대 남돌 취향표', width / 2, 48, 36, '#111111', 'bold');
     drawText('@maxmajukee', width / 2, 82, 14, '#888888');
 
     const tableX = margin;
@@ -767,7 +848,7 @@ async function exportPng() {
         const a = document.createElement('a');
 
         a.href = url;
-        a.download = '남돌-취향표.png';
+        a.download = '2세대 남돌-취향표.png';
 
         document.body.append(a);
         a.click();
@@ -784,5 +865,48 @@ $('save-image').addEventListener('click', () => {
     });
 });
 
-// 처음 페이지를 열 때 표 생성
-render();
+// Supabase에서 공동 참여자 목록 불러오기
+async function loadParticipants() {
+    const { data, error } = await supabaseClient
+        .from('chart_participants')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+    if (error) {
+        console.error('참여자 불러오기 실패:', error);
+        alert('공동 취향표를 불러오지 못했어요. Supabase 연결을 확인해 주세요.');
+        return;
+    }
+
+    people = data.map(row => ({
+        id: row.id,
+        name: row.nickname,
+        photo: row.photo || '',
+        picks: row.picks || {}
+    }));
+
+    render();
+}
+
+// 처음 페이지를 열 때 공동 참여자 불러오기
+loadParticipants();
+
+// 다른 사람이 참여자를 추가·수정·삭제하면 자동으로 새로고침
+const chartChannel = supabaseClient
+    .channel('shared-chart-changes')
+    .on(
+        'postgres_changes',
+        {
+            event: '*',
+            schema: 'public',
+            table: 'chart_participants'
+        },
+        () => {
+            loadParticipants();
+        }
+    )
+    .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+            console.log('공동 취향표 실시간 연결 성공!');
+        }
+    });
