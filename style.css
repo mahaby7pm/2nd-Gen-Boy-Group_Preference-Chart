@@ -833,3 +833,28 @@ body {
 header {
     gap: 22px;
 }
+
+/* 멤버 선택 카드: 모바일에서도 깔끔한 회색 테두리 */
+#member-dialog .member-choice {
+    border: 2px solid transparent;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+#member-dialog .member-choice.selected {
+    border: 2px solid #777777;
+    outline: none;
+    background: #ffffff;
+}
+
+#member-dialog .member-choice:focus,
+#member-dialog .member-choice:focus-visible {
+    outline: none;
+}
+
+/* 선택 여부에 따라 카드 크기가 달라지지 않도록 */
+#member-dialog .member-choice {
+    box-sizing: border-box;
+}
