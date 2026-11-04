@@ -521,7 +521,7 @@ async function deletePerson(personId) {
     const person = people.find(p => p.id === personId);
     if (!person) return;
 
-    if (!confirm(`${person.name} 님을 삭제할까요?\n최애 선택 기록도 함께 삭제됩니다.`)) {
+    if (!confirm(`${person.name} 님을 삭제할까요?\n선택 기록도 함께 삭제됩니다.`)) {
         return;
     }
 
