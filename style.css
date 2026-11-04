@@ -899,3 +899,24 @@ header {
         transform: translateY(0px);
     }
 }
+
+/* 모바일 취향표: 참여자 열 왼쪽 고정 */
+@media (max-width: 600px) {
+
+    /* 참여자 이름과 프로필 사진 고정 */
+    #chart tbody th {
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        background: #ffffff;
+    }
+
+    /* 왼쪽 위 모서리 칸은 가장 위에 표시 */
+    #chart thead th.corner {
+        position: sticky;
+        top: 0;
+        left: 0;
+        z-index: 4;
+        background: #ffffff;
+    }
+}
