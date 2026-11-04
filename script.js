@@ -174,6 +174,38 @@ const $ = id => document.getElementById(id);
 let people = [];
 let editingPersonId = null;
 
+// 15개 그룹을 모두 선택했는지 확인 ('텅'도 선택으로 인정)
+function isComplete(person) {
+    return groups.every(group => {
+        const value = person.picks?.[group.id];
+        return typeof value === 'string' && value.trim().length > 0;
+    });
+}
+
+// 잠금 요청: 데이터베이스의 최신 상태를 다시 확인하고 저장
+async function lockPerson(personId) {
+    const person = people.find(p => p.id === personId);
+    if (!person || person.is_locked) return;
+    if (!isComplete(person)) {
+        alert('15개 그룹을 모두 선택해야 잠글 수 있어요.');
+        return;
+    }
+    if (!confirm(`${person.name} 님의 취향표를 잠글까요?\n잠근 뒤에는 본인이 수정하거나 삭제할 수 없고, 관리자만 해제할 수 있어요.`)) return;
+
+    const { data, error } = await supabaseClient
+        .from('chart_participants')
+        .update({ is_locked: true })
+        .eq('id', personId)
+        .eq('is_locked', false)
+        .select('id');
+
+    if (error || !data?.length) {
+        console.error('잠금 실패:', error);
+        alert('잠금에 실패했어요. 다른 기기에서 변경되었을 수 있으니 새로고침 후 다시 시도해 주세요.');
+    }
+    await loadParticipants();
+}
+
 try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     if (Array.isArray(saved)) people = saved;
@@ -242,6 +274,21 @@ function render() {
     people.forEach(person => {
         const tr = document.createElement('tr');
         const th = document.createElement('th');
+        // 프로필 사진 위에 잠금 버튼 표시
+        const lockButton = document.createElement('button');
+        lockButton.type = 'button';
+        lockButton.className = 'profile-lock';
+        lockButton.innerHTML = person.is_locked
+            ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>'
+            : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0"/></svg>';
+        lockButton.title = person.is_locked ? '잠금 완료 (관리자만 해제 가능)' :
+            isComplete(person) ? '취향표 잠그기' : '15개 그룹을 모두 선택하면 잠글 수 있어요';
+        lockButton.setAttribute('aria-label', lockButton.title);
+        lockButton.disabled = person.is_locked || !isComplete(person);
+        if (!lockButton.disabled) {
+            lockButton.addEventListener('click', () => lockPerson(person.id));
+        }
+        th.append(lockButton);
         th.append(person.photo ? imgNode(person.photo, 'profile-photo') : placeholder());
 
         const name = document.createElement('div');
@@ -264,8 +311,10 @@ function render() {
         deleteButton.className = 'profile-delete';
         deleteButton.addEventListener('click', () => deletePerson(person.id));
 
-        actions.append(editButton, deleteButton);
-        th.append(actions);
+        if (!person.is_locked) {
+            actions.append(editButton, deleteButton);
+            th.append(actions);
+        }
         tr.append(th);
 
         groups.forEach(group => {
@@ -299,7 +348,12 @@ function render() {
                 button.append(span);
             }
 
-            button.addEventListener('click', () => openMembers(person.id, group.id));
+            if (person.is_locked) {
+                button.disabled = true;
+                button.title = '잠긴 취향표입니다';
+            } else {
+                button.addEventListener('click', () => openMembers(person.id, group.id));
+            }
             td.append(button);
             tr.append(td);
         });
@@ -313,6 +367,10 @@ function openMembers(personId, groupId) {
     const person = people.find(p => p.id === personId);
     const group = groups.find(g => g.id === groupId);
     if (!person || !group) return;
+    if (person.is_locked) {
+        alert('잠긴 취향표는 수정할 수 없어요.');
+        return;
+    }
 
     $('member-title').textContent = group.name;
     const options = $('member-options');
@@ -349,7 +407,7 @@ function openMembers(personId, groupId) {
             // 다른 사람의 최신 선택 기록을 먼저 가져오기
             const { data: latest, error: readError } = await supabaseClient
                 .from('chart_participants')
-                .select('picks')
+                .select('picks, is_locked')
                 .eq('id', personId)
                 .single();
 
@@ -357,6 +415,13 @@ function openMembers(personId, groupId) {
                 console.error('선택 기록 불러오기 실패:', readError);
                 alert('선택 기록을 불러오지 못했어요.');
                 options.querySelectorAll('button').forEach(b => b.disabled = false);
+                return;
+            }
+
+            if (latest.is_locked) {
+                alert('이미 잠긴 취향표입니다.');
+                closeDialog($('member-dialog'));
+                await loadParticipants();
                 return;
             }
 
@@ -368,7 +433,8 @@ function openMembers(personId, groupId) {
             const { error } = await supabaseClient
                 .from('chart_participants')
                 .update({ picks: updatedPicks })
-                .eq('id', personId);
+                .eq('id', personId)
+                .eq('is_locked', false);
 
             if (error) {
                 console.error('최애 선택 저장 실패:', error);
@@ -399,6 +465,10 @@ $('add-person').addEventListener('click', () => {
 function openEditProfile(personId) {
     const person = people.find(p => p.id === personId);
     if (!person) return;
+    if (person.is_locked) {
+        alert('잠긴 취향표는 수정할 수 없어요.');
+        return;
+    }
 
     editingPersonId = personId;
     $('profile-title').textContent = '참여자 수정';
@@ -480,7 +550,8 @@ $('profile-form').addEventListener('submit', async event => {
                     nickname: name,
                     photo: updatedPhoto
                 })
-                .eq('id', editingPersonId);
+                .eq('id', editingPersonId)
+                .eq('is_locked', false);
 
             if (error) throw error;
 
@@ -520,6 +591,10 @@ $('profile-form').addEventListener('submit', async event => {
 async function deletePerson(personId) {
     const person = people.find(p => p.id === personId);
     if (!person) return;
+    if (person.is_locked) {
+        alert('잠긴 취향표는 삭제할 수 없어요.');
+        return;
+    }
 
     if (!confirm(`${person.name} 님을 삭제할까요?\n선택 기록도 함께 삭제됩니다.`)) {
         return;
@@ -528,7 +603,8 @@ async function deletePerson(personId) {
     const { error } = await supabaseClient
         .from('chart_participants')
         .delete()
-        .eq('id', personId);
+        .eq('id', personId)
+        .eq('is_locked', false);
 
     if (error) {
         console.error('참여자 삭제 실패:', error);
@@ -882,7 +958,8 @@ async function loadParticipants() {
         id: row.id,
         name: row.nickname,
         photo: row.photo || '',
-        picks: row.picks || {}
+        picks: row.picks || {},
+        is_locked: row.is_locked === true
     }));
 
     render();
